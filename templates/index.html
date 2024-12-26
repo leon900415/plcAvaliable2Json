@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PLC CSV 转 JSON 工具</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-2xl mx-auto">
+            <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">PLC CSV 转 JSON 工具</h1>
+            
+            <!-- 上传区域 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- 单文件上传 -->
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-semibold mb-4">单文件上传</h2>
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center" id="singleDropZone">
+                        <input type="file" id="singleFileInput" accept=".csv" class="hidden">
+                        <label for="singleFileInput" class="cursor-pointer">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="mt-2 text-gray-600">点击或拖拽上传CSV文件</p>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 文件夹上传 -->
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-semibold mb-4">文件夹上传</h2>
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center" id="folderDropZone">
+                        <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden">
+                        <label for="folderInput" class="cursor-pointer">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="mt-2 text-gray-600">点击或拖拽上传文件夹</p>
+                            <p class="mt-1 text-sm text-gray-500">支持批量处理CSV文件</p>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 单文件结果显示区域 -->
+            <div id="singleResultArea" class="hidden bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-xl font-semibold mb-4">转换结果</h2>
+                <div class="mb-4 text-gray-600">
+                    共有 <span id="propertiesCount" class="font-semibold text-blue-600">0</span> 条数据
+                </div>
+                <pre id="jsonResult" class="bg-gray-50 p-4 rounded overflow-x-auto text-sm"></pre>
+                <div class="mt-4 flex space-x-2">
+                    <button id="copyButton" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors">
+                        复制 JSON
+                    </button>
+                    <button id="downloadButton" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors">
+                        下载 JSON
+                    </button>
+                </div>
+            </div>
+
+            <!-- 批量处理进度区域 -->
+            <div id="progressArea" class="hidden bg-white p-6 rounded-lg shadow-md mb-6">
+                <h2 class="text-xl font-semibold mb-4">处理进度</h2>
+                <div class="space-y-2">
+                    <div class="flex justify-between text-sm text-gray-600">
+                        <span id="currentFile">准备处理...</span>
+                        <span id="progress">0/0</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 批量处理结果列表区域 -->
+            <div id="batchResultArea" class="hidden">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-semibold mb-4">处理结果</h2>
+                    <div id="fileList" class="space-y-2">
+                        <!-- 文件列表将在这里动态生成 -->
+                    </div>
+                    <button id="downloadAllButton" class="mt-4 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors">
+                        下载所有JSON文件
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 获取DOM元素
+        const singleDropZone = document.getElementById('singleDropZone');
+        const folderDropZone = document.getElementById('folderDropZone');
+        const singleFileInput = document.getElementById('singleFileInput');
+        const folderInput = document.getElementById('folderInput');
+        const singleResultArea = document.getElementById('singleResultArea');
+        const batchResultArea = document.getElementById('batchResultArea');
+        const progressArea = document.getElementById('progressArea');
+        const jsonResult = document.getElementById('jsonResult');
+        const fileList = document.getElementById('fileList');
+        const currentFile = document.getElementById('currentFile');
+        const progress = document.getElementById('progress');
+        const progressBar = document.getElementById('progressBar');
+        const copyButton = document.getElementById('copyButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const downloadAllButton = document.getElementById('downloadAllButton');
+
+        let processedFiles = [];
+
+        // 单文件拖拽上传
+        singleDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            singleDropZone.classList.add('border-blue-500');
+        });
+
+        singleDropZone.addEventListener('dragleave', () => {
+            singleDropZone.classList.remove('border-blue-500');
+        });
+
+        singleDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            singleDropZone.classList.remove('border-blue-500');
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                handleSingleFile(file);
+            }
+        });
+
+        // 文件夹拖拽上传
+        folderDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            folderDropZone.classList.add('border-blue-500');
+        });
+
+        folderDropZone.addEventListener('dragleave', () => {
+            folderDropZone.classList.remove('border-blue-500');
+        });
+
+        folderDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            folderDropZone.classList.remove('border-blue-500');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        // 单文件选择
+        singleFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleSingleFile(e.target.files[0]);
+            }
+        });
+
+        // 文件夹选择
+        folderInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        // 处理单个文件
+        async function handleSingleFile(file) {
+            if (!file.name.endsWith('.csv')) {
+                alert('请上传CSV文件');
+                return;
+            }
+
+            try {
+                const result = await processFile(file);
+                const jsonData = JSON.parse(result);
+                jsonResult.textContent = JSON.stringify(jsonData, null, 2);
+                // 更新properties数量显示
+                document.getElementById('propertiesCount').textContent = jsonData.properties.length;
+                singleResultArea.classList.remove('hidden');
+                batchResultArea.classList.add('hidden');
+                progressArea.classList.add('hidden');
+            } catch (error) {
+                alert('处理文件时出错: ' + error);
+            }
+        }
+
+        // 处理多个文件
+        function handleFiles(files) {
+            const csvFiles = Array.from(files).filter(file => file.name.endsWith('.csv'));
+            if (csvFiles.length === 0) {
+                alert('没有找到CSV文件');
+                return;
+            }
+
+            // 重置状态
+            processedFiles = [];
+            fileList.innerHTML = '';
+            progressArea.classList.remove('hidden');
+            batchResultArea.classList.remove('hidden');
+            singleResultArea.classList.add('hidden');
+            
+            // 更新进度显示
+            progress.textContent = `0/${csvFiles.length}`;
+            progressBar.style.width = '0%';
+
+            // 处理每个文件
+            processFiles(csvFiles);
+        }
+
+        async function processFiles(files) {
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                currentFile.textContent = `正在处理: ${file.name}`;
+                progress.textContent = `${i + 1}/${files.length}`;
+                progressBar.style.width = `${((i + 1) / files.length) * 100}%`;
+
+                try {
+                    const result = await processFile(file);
+                    addFileToList(file.name, result);
+                } catch (error) {
+                    console.error(`处理文件 ${file.name} 时出错:`, error);
+                    addFileToList(file.name, null, error);
+                }
+            }
+        }
+
+        async function processFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            processedFiles.push({
+                filename: file.name.replace('.csv', '.json'),
+                content: data.result
+            });
+
+            return data.result;
+        }
+
+        function addFileToList(filename, result, error = null) {
+            const div = document.createElement('div');
+            div.className = 'flex justify-between items-center p-2 bg-gray-50 rounded';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = error ? 'text-red-500' : 'text-gray-700';
+            nameSpan.textContent = filename;
+            
+            const downloadButton = document.createElement('button');
+            downloadButton.className = error ? 
+                'text-red-500 text-sm' : 
+                'text-blue-500 hover:text-blue-700 text-sm';
+            downloadButton.textContent = error ? '处理失败' : '下载JSON';
+            
+            if (!error) {
+                downloadButton.onclick = () => {
+                    downloadJson(filename.replace('.csv', '.json'), result);
+                };
+            }
+
+            div.appendChild(nameSpan);
+            div.appendChild(downloadButton);
+            fileList.appendChild(div);
+        }
+
+        function downloadJson(filename, content) {
+            const blob = new Blob([content], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // 复制功能
+        copyButton.addEventListener('click', () => {
+            navigator.clipboard.writeText(jsonResult.textContent)
+                .then(() => alert('已复制到剪贴板'))
+                .catch(err => alert('复制失败: ' + err));
+        });
+
+        // 单文件下载功能
+        downloadButton.addEventListener('click', () => {
+            const content = jsonResult.textContent;
+            const filename = singleFileInput.files[0]?.name.replace('.csv', '.json') || 'converted.json';
+            downloadJson(filename, content);
+        });
+
+        // 批量下载功能
+        downloadAllButton.addEventListener('click', () => {
+            processedFiles.forEach(file => {
+                downloadJson(file.filename, file.content);
+            });
+        });
+    </script>
+</body>
+</html> 
