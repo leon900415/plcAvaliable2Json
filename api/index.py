@@ -3,9 +3,10 @@ from flask import Flask, render_template, request, jsonify
 import json
 import pypinyin
 import re
-from io import StringIO
+from io import StringIO, BytesIO
 from csv import reader
 import os
+import cgi
 
 app = Flask(__name__, 
     template_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates')))
@@ -165,11 +166,57 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(response.data)
             
     def do_POST(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        with app.test_client() as test_client:
-            response = test_client.post(self.path, data=post_data, headers=self.headers)
-            self.wfile.write(response.data) 
+        try:
+            content_type = self.headers.get('Content-Type', '')
+            if 'multipart/form-data' in content_type:
+                # 获取 boundary
+                boundary = content_type.split('boundary=')[1].encode()
+                
+                # 读取请求内容
+                content_length = int(self.headers.get('Content-Length', 0))
+                post_data = self.rfile.read(content_length)
+                
+                # 创建类文件对象
+                data_file = BytesIO(post_data)
+                
+                # 解析 multipart 数据
+                form = cgi.FieldStorage(
+                    fp=data_file,
+                    headers=self.headers,
+                    environ={
+                        'REQUEST_METHOD': 'POST',
+                        'CONTENT_TYPE': content_type,
+                        'CONTENT_LENGTH': content_length
+                    }
+                )
+                
+                # 获取上传的文件
+                if 'file' in form:
+                    fileitem = form['file']
+                    if fileitem.filename:
+                        # 读取文件内容
+                        file_content = fileitem.file.read().decode('utf-8')
+                        # 处理 CSV 内容
+                        json_result = csv_to_json(file_content)
+                        
+                        # 发送响应
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        response_data = json.dumps({'result': json_result})
+                        self.wfile.write(response_data.encode('utf-8'))
+                        return
+                    
+            # 如果不是文件上传或处理失败
+            self.send_response(400)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            error_response = json.dumps({'error': '请上传CSV文件'})
+            self.wfile.write(error_response.encode('utf-8'))
+            
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            error_response = json.dumps({'error': f'处理文件时出错: {str(e)}'})
+            self.wfile.write(error_response.encode('utf-8')) 
