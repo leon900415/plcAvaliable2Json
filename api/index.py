@@ -1,7 +1,6 @@
 from http.server import BaseHTTPRequestHandler
 from flask import Flask, render_template, request, jsonify
 import json
-import pypinyin
 import re
 from io import StringIO
 from csv import reader
@@ -10,55 +9,17 @@ import os
 app = Flask(__name__, 
     template_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates')))
 
-def chinese_to_pinyin(text):
-    """
-    将文本转换为ID格式：
-    非中文字符 + "-" + 中文拼音首字母 + "-" + 剩余非中文字符
-    """
-    text = str(text)
-    chinese_pattern = re.compile(r'[\u4e00-\u9fff]+')
-    
-    # 分割所有中文片段
-    parts = chinese_pattern.split(text)
-    chinese_matches = chinese_pattern.findall(text)
-    
-    # 处理中文部分：转换为拼音首字母
-    pinyin_parts = []
-    if chinese_matches:
-        for chinese in chinese_matches:
-            pinyin_list = pypinyin.lazy_pinyin(chinese)
-            pinyin_parts.append(''.join([word[0].upper() for word in pinyin_list]))
-    
-    # 组合结果
-    result_parts = []
-    
-    # 添加第一个非中文部分（如果存在）
-    if parts[0]:
-        result_parts.append(parts[0].strip())
-    
-    # 添加中文拼音部分（如果存在）
-    if pinyin_parts:
-        result_parts.append(''.join(pinyin_parts))
-    
-    # 添加剩余的非中文部分（如果存在）
-    for part in parts[1:]:
-        if part.strip():
-            result_parts.append(part.strip())
-    
-    # 用 "-" 连接所有部分
-    return '-'.join(result_parts)
-
 def get_name_from_row(row):
     """
     从行数据生成 name：
-    1. 用 "-" 连接所有非空列
+    1. 用 "," 连接所有非空列
     2. 取第一个分号后的内容
     """
     # 过滤掉空列并去除前后空格
     valid_columns = [col.strip() for col in row if col.strip()]
     
-    # 用 "-" 连接所有列
-    full_text = '-'.join(valid_columns)
+    # 用 "," 连接所有列
+    full_text = ','.join(valid_columns)
     
     # 获取第一个分号后的内容
     if ';' in full_text:
@@ -71,7 +32,7 @@ def determine_plc_data_type(row):
     连接所有列检查关键字
     """
     # 连接所有非空列
-    full_text = '-'.join([col.strip() for col in row if col.strip()]).upper()
+    full_text = ','.join([col.strip() for col in row if col.strip()]).upper()
     
     if 'INT' in full_text:
         return 'int'
@@ -97,8 +58,8 @@ def csv_to_json(csv_content):
                 if not name:
                     continue
                 
-                # 生成 ID
-                id = chinese_to_pinyin(name)
+                # id 与 name 保持一致
+                id = name
                 
                 # 确定数据类型
                 plc_data_type = determine_plc_data_type(row)
