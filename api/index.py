@@ -1,73 +1,83 @@
-from http.server import BaseHTTPRequestHandler
 from flask import Flask, render_template, request, jsonify
 import json
 import pypinyin
 import re
-from io import StringIO, BytesIO
+from io import StringIO
 from csv import reader
 import os
-import cgi
 
 app = Flask(__name__, 
     template_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'templates')))
 
 def chinese_to_pinyin(text):
-    """生成ID：保留中文前的非中文字符，中文转换为拼音首字母拼接，保留数字格式"""
+    """
+    将文本转换为ID格式：
+    非中文字符 + "-" + 中文拼音首字母 + "-" + 剩余非中文字符
+    """
     text = str(text)
-    chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
-    number_pattern = re.compile(r'\d+')
+    chinese_pattern = re.compile(r'[\u4e00-\u9fff]+')
     
-    match = chinese_pattern.search(text)
-    if not match:
-        return text
+    # 分割所有中文片段
+    parts = chinese_pattern.split(text)
+    chinese_matches = chinese_pattern.findall(text)
     
-    prefix = text[:match.start()].strip()
-    chinese_part = text[match.start():]
+    # 处理中文部分：转换为拼音首字母
+    pinyin_parts = []
+    if chinese_matches:
+        for chinese in chinese_matches:
+            pinyin_list = pypinyin.lazy_pinyin(chinese)
+            pinyin_parts.append(''.join([word[0].upper() for word in pinyin_list]))
     
-    last_number = None
-    number_matches = list(number_pattern.finditer(chinese_part))
-    if number_matches:
-        last_number = number_matches[-1].group()
-        chinese_part = chinese_part[:number_matches[-1].start()] + chinese_part[number_matches[-1].end():]
+    # 组合结果
+    result_parts = []
     
-    pinyin_list = pypinyin.lazy_pinyin(chinese_part)
-    pinyin_part = ''.join([word[0].upper() for word in pinyin_list])
+    # 添加第一个非中文部分（如果存在）
+    if parts[0]:
+        result_parts.append(parts[0].strip())
     
-    if prefix and pinyin_part:
-        result = f"{prefix}-{pinyin_part}"
-    elif prefix:
-        result = prefix
-    else:
-        result = pinyin_part
+    # 添加中文拼音部分（如果存在）
+    if pinyin_parts:
+        result_parts.append(''.join(pinyin_parts))
     
-    if last_number:
-        result = f"{result}-{last_number}"
+    # 添加剩余的非中文部分（如果存在）
+    for part in parts[1:]:
+        if part.strip():
+            result_parts.append(part.strip())
     
-    return result
+    # 用 "-" 连接所有部分
+    return '-'.join(result_parts)
 
-def get_description_after_semicolon(text):
-    """获取分号后的内容"""
-    if ';' in text:
-        return text.split(';', 1)[1].strip()
-    return text.strip()
+def get_name_from_row(row):
+    """
+    从行数据生成 name：
+    1. 用 "-" 连接所有非空列
+    2. 取第一个分号后的内容
+    """
+    # 过滤掉空列并去除前后空格
+    valid_columns = [col.strip() for col in row if col.strip()]
+    
+    # 用 "-" 连接所有列
+    full_text = '-'.join(valid_columns)
+    
+    # 获取第一个分号后的内容
+    if ';' in full_text:
+        return full_text.split(';', 1)[1].strip()
+    return full_text.strip()
 
-def determine_plc_data_type(address, description=''):
-    """根据地址和描述确定 plcDataType"""
-    if not address and not description:
-        return 'boolean'
-    
-    full_text = f"{str(address)};{str(description)}".upper()
-    address_part = str(address).upper().split(';')[0]
-    
-    if re.match(r'^[IQM]\d+\.\d+', address_part):
-        return 'boolean'
+def determine_plc_data_type(row):
+    """
+    根据行内容确定 plcDataType：
+    连接所有列检查关键字
+    """
+    # 连接所有非空列
+    full_text = '-'.join([col.strip() for col in row if col.strip()]).upper()
     
     if 'INT' in full_text:
         return 'int'
-    elif 'REAL' in full_text:
-        return 'float'
     elif 'WORD' in full_text:
         return 'short'
+    elif 'REAL' in full_text:
+        return 'float'
     return 'boolean'
 
 def csv_to_json(csv_content):
@@ -81,32 +91,16 @@ def csv_to_json(csv_content):
                 if not row or not any(row):
                     continue
                 
-                first_col = row[0].strip() if row[0] else ''
-                if not first_col:
+                # 获取 name
+                name = get_name_from_row(row)
+                if not name:
                     continue
                 
-                if ';' in first_col:
-                    parts = first_col.split(';', 1)
-                    address = parts[0].strip()
-                    description = parts[1].strip()
-                else:
-                    address = first_col
-                    description = ''
+                # 生成 ID
+                id = chinese_to_pinyin(name)
                 
-                if len(row) > 1:
-                    other_parts = [get_description_after_semicolon(part.strip()) for part in row[1:] if part and part.strip()]
-                    if other_parts:
-                        if description:
-                            description = f"{description}-{'-'.join(other_parts)}"
-                        else:
-                            description = '-'.join(other_parts)
-                
-                if not description:
-                    description = get_description_after_semicolon(address)
-                
-                name = description
-                id = chinese_to_pinyin(description)
-                plc_data_type = determine_plc_data_type(address, name)
+                # 确定数据类型
+                plc_data_type = determine_plc_data_type(row)
                 
                 properties.append({
                     "id": id,
@@ -156,67 +150,11 @@ def upload_file():
     except Exception as e:
         return jsonify({'error': f'处理文件时出错: {str(e)}'}), 500
 
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html')
-        self.end_headers()
-        with app.test_client() as test_client:
-            response = test_client.get(self.path)
-            self.wfile.write(response.data)
-            
-    def do_POST(self):
-        try:
-            content_type = self.headers.get('Content-Type', '')
-            if 'multipart/form-data' in content_type:
-                # 获取 boundary
-                boundary = content_type.split('boundary=')[1].encode()
-                
-                # 读取请求内容
-                content_length = int(self.headers.get('Content-Length', 0))
-                post_data = self.rfile.read(content_length)
-                
-                # 创建类文件对象
-                data_file = BytesIO(post_data)
-                
-                # 解析 multipart 数据
-                form = cgi.FieldStorage(
-                    fp=data_file,
-                    headers=self.headers,
-                    environ={
-                        'REQUEST_METHOD': 'POST',
-                        'CONTENT_TYPE': content_type,
-                        'CONTENT_LENGTH': content_length
-                    }
-                )
-                
-                # 获取上传的文件
-                if 'file' in form:
-                    fileitem = form['file']
-                    if fileitem.filename:
-                        # 读取文件内容
-                        file_content = fileitem.file.read().decode('utf-8')
-                        # 处理 CSV 内容
-                        json_result = csv_to_json(file_content)
-                        
-                        # 发送响应
-                        self.send_response(200)
-                        self.send_header('Content-type', 'application/json')
-                        self.end_headers()
-                        response_data = json.dumps({'result': json_result})
-                        self.wfile.write(response_data.encode('utf-8'))
-                        return
-                    
-            # 如果不是文件上传或处理失败
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            error_response = json.dumps({'error': '请上传CSV文件'})
-            self.wfile.write(error_response.encode('utf-8'))
-            
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            error_response = json.dumps({'error': f'处理文件时出错: {str(e)}'})
-            self.wfile.write(error_response.encode('utf-8')) 
+# Vercel Serverless Function handler
+def handler(request):
+    """Handle Vercel serverless function requests"""
+    return app
+
+# 本地开发服务器启动
+if __name__ == '__main__':
+    app.run(debug=True, port=5000) 
