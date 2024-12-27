@@ -1,3 +1,4 @@
+from http.server import BaseHTTPRequestHandler
 from flask import Flask, render_template, request, jsonify
 import json
 import pypinyin
@@ -150,10 +151,44 @@ def upload_file():
     except Exception as e:
         return jsonify({'error': f'处理文件时出错: {str(e)}'}), 500
 
-# Vercel Serverless Function handler
-def handler(request):
-    """Handle Vercel serverless function requests"""
-    return app
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        """Handle GET requests"""
+        try:
+            with app.test_client() as test_client:
+                response = test_client.get(self.path)
+                self.send_response(response.status_code)
+                for header, value in response.headers:
+                    self.send_header(header, value)
+                self.end_headers()
+                self.wfile.write(response.data)
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(str(e).encode())
+
+    def do_POST(self):
+        """Handle POST requests"""
+        try:
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            with app.test_client() as test_client:
+                response = test_client.post(
+                    self.path,
+                    data=body,
+                    headers=dict(self.headers)
+                )
+                self.send_response(response.status_code)
+                for header, value in response.headers:
+                    self.send_header(header, value)
+                self.end_headers()
+                self.wfile.write(response.data)
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(str(e).encode())
 
 # 本地开发服务器启动
 if __name__ == '__main__':
