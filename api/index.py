@@ -29,13 +29,18 @@ def get_name_from_row(row):
 def determine_plc_data_type(row):
     """
     根据行内容确定 plcDataType：
-    连接所有列检查关键字
+    连接所有列检查关键字，按照优先级判断类型
     """
-    # 连接所有非空列
+    # 连接所有非空列并转换为大写
     full_text = ','.join([col.strip() for col in row if col.strip()]).upper()
     
-    if 'INT' in full_text:
-        return 'int'
+    # 按照优先级判断类型
+    if 'SINT' in full_text or 'INT' in full_text:
+        return 'signed'
+    elif 'USINT' in full_text or 'UINT' in full_text:
+        return 'unsigned'
+    elif 'DINT' in full_text or 'LINT' in full_text:
+        return 'long'
     elif 'WORD' in full_text:
         return 'short'
     elif 'REAL' in full_text:
