@@ -70,10 +70,12 @@ def csv_to_json(csv_content):
                 plc_data_type = determine_plc_data_type(row)
                 
                 properties.append({
+                    "valueType": {
+                        "type": plc_data_type
+                    },
                     "id": id,
                     "name": name,
                     "expands": {
-                        "plcDataType": plc_data_type,
                         "isShowCurve": 1
                     }
                 })

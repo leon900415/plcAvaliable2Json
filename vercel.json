@@ -11,6 +11,20 @@
             "src": "/(.*)",
             "dest": "/api/index.py"
         }
-    ]
-    
+    ],
+    "events": [],
+    "properties": [
+        {
+            "valueType": {
+                "type": "signed"
+            },
+            "id": "...",
+            "name": "...",
+            "expands": {
+                "isShowCurve": 1
+            }
+        }
+    ],
+    "functions": [],
+    "tags": []
 } 
